@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Data Genie</title>
+
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f4f6f9;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 980px;
+            margin: 25px auto;
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+        }
+
+        h2 {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .chat-box {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            height: 460px;
+            overflow-y: auto;
+            background: #fafafa;
+        }
+
+        .message.user {
+            background: #0078d7;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin: 8px 0;
+            max-width: 70%;
+            float: right;
+            clear: both;
+        }
+
+        .message.assistant {
+            clear: both;
+            margin-top: 10px;
+        }
+
+        .result-card {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 10px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            font-size: 14px;
+        }
+
+        th {
+            background: #0078d7;
+            color: white;
+        }
+
+        .action-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .action-row button {
+            padding: 6px 14px;
+            font-size: 13px;
+            border-radius: 4px;
+            border: 1px solid #cddaff;
+            background: #eef4ff;
+            cursor: pointer;
+        }
+
+        .action-row button:hover {
+            background: #dce8ff;
+        }
+
+        .insight-box, .chart-box, .sql-box {
+            margin-top: 10px;
+            display: none;
+            padding: 10px;
+            border-radius: 6px;
+            background: #f9f9f9;
+            font-size: 13px;
+        }
+
+        .chart-box img {
+            width: 100%;
+            max-height: 360px;
+            object-fit: contain;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        input {
+            flex: 1;
+            padding: 10px;
+            font-size: 15px;
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+    <h2>AI Data Genie</h2>
+
+    <div class="chat-box" id="chat-box"></div>
+
+    <div class="input-area">
+        <input type="text" id="user-input" placeholder="Ask a data question..." />
+        <button onclick="sendMessage()">Send</button>
+    </div>
+</div>
+
+<script>
+let lastSQL = "";
+
+async function sendMessage() {
+    const input = document.getElementById("user-input");
+    const query = input.value.trim();
+    if (!query) return;
+
+    const chatBox = document.getElementById("chat-box");
+
+    chatBox.innerHTML += `<div class="message user">${query}</div>`;
+    input.value = "";
+
+    const res = await fetch("/chat", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ query: query, action: "data" })
+    });
+
+    const data = await res.json();
+    lastSQL = data.sql || "";
+
+    let html = `<div class="result-card">
+        <strong>✅ Query executed successfully</strong>
+    `;
+
+    if (data.results && data.results.length > 0) {
+        html += "<table><tr>";
+        Object.keys(data.results[0]).forEach(k => html += `<th>${k}</th>`);
+        html += "</tr>";
+
+        data.results.forEach(row => {
+            html += "<tr>";
+            Object.values(row).forEach(v => html += `<td>${v}</td>`);
+            html += "</tr>";
+        });
+        html += "</table>";
+    }
+
+    html += `
+        <div class="action-row">
+            <button onclick="toggleInsights(this)">Show Insights</button>
+            <button onclick="toggleChart(this)">Show Chart</button>
+            <button onclick="toggleSQL(this)">Show SQL</button>
+        </div>
+
+        <div class="insight-box"></div>
+        <div class="chart-box"></div>
+        <div class="sql-box"><pre>${lastSQL}</pre></div>
+    </div>`;
+
+    chatBox.innerHTML += `<div class="message assistant">${html}</div>`;
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+async function toggleInsights(btn) {
+    const box = btn.parentElement.nextElementSibling;
+
+    if (box.dataset.loaded === "true") {
+        const visible = box.style.display === "block";
+        box.style.display = visible ? "none" : "block";
+        btn.innerText = visible ? "Show Insights" : "Hide Insights";
+        return;
+    }
+
+    btn.innerText = "Loading...";
+    box.style.display = "block";
+
+    const res = await fetch("/chat", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ action: "insight" })
+    });
+
+    const data = await res.json();
+    box.innerHTML = data.insights.replace(/\n/g, "<br>");
+    box.dataset.loaded = "true";
+    btn.innerText = "Hide Insights";
+}
+
+async function toggleChart(btn) {
+    const chartBox = btn.parentElement.nextElementSibling.nextElementSibling;
+
+    if (chartBox.dataset.loaded === "true") {
+        const visible = chartBox.style.display === "block";
+        chartBox.style.display = visible ? "none" : "block";
+        btn.innerText = visible ? "Show Chart" : "Hide Chart";
+        return;
+    }
+
+    btn.innerText = "Loading...";
+    chartBox.style.display = "block";
+
+    const res = await fetch("/chat", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ action: "chart" })
+    });
+
+    const data = await res.json();
+    const img = document.createElement("img");
+    img.src = "data:image/png;base64," + data.chart_image;
+
+    chartBox.innerHTML = "";
+    chartBox.appendChild(img);
+    chartBox.dataset.loaded = "true";
+    btn.innerText = "Hide Chart";
+}
+
+function toggleSQL(btn) {
+    const sqlBox = btn.parentElement.nextElementSibling.nextElementSibling.nextElementSibling;
+    const visible = sqlBox.style.display === "block";
+    sqlBox.style.display = visible ? "none" : "block";
+    btn.innerText = visible ? "Show SQL" : "Hide SQL";
+}
+</script>
+</body>
+</html>
